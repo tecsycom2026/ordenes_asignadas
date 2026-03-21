@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tecsycom – Mis Órdenes</title>
+  <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1865/1865269.png" type="image/x-icon">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    html,body{height:100%;overflow:hidden;font-family:sans-serif;}
+    #map{height:100vh;width:100%;display:none;}
+    #login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);padding:20px;}
+    .card{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:30px 24px;width:100%;max-width:360px;text-align:center;backdrop-filter:blur(10px);}
+    .card .logo{font-size:48px;margin-bottom:10px;}
+    .card h2{font-size:20px;color:white;margin-bottom:6px;font-weight:700;}
+    .card .subtitle{font-size:13px;color:rgba(255,255,255,0.6);margin-bottom:24px;}
+    .card select,.card input{width:100%;padding:12px 16px;border-radius:10px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.1);color:white;font-size:15px;margin-bottom:12px;outline:none;}
+    .card select option{background:#16213e;color:white;}
+    .card input::placeholder{color:rgba(255,255,255,0.4);}
+    .card input:focus,.card select:focus{border-color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.15);}
+    .card input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
+    .zona-row{display:flex;gap:10px;margin-bottom:12px;}
+    .zona-row label{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:10px;padding:10px;color:white;font-size:14px;cursor:pointer;}
+    .zona-row input[type=radio]{accent-color:#00b4d8;}
+    .btn-main{width:100%;padding:13px;border-radius:10px;border:none;background:linear-gradient(135deg,#00b4d8,#0077b6);color:white;font-size:15px;font-weight:bold;cursor:pointer;transition:opacity .2s;touch-action:manipulation;margin-bottom:8px;}
+    .btn-main:disabled{opacity:.5;cursor:not-allowed;}
+    .btn-sec{width:100%;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.3);background:transparent;color:white;font-size:13px;cursor:pointer;touch-action:manipulation;}
+    .error-msg{color:#ff6b6b;font-size:12px;margin-top:6px;}
+    .success-msg{color:#51cf66;font-size:12px;margin-top:6px;}
+
+    /* Mapa */
+    #top-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1500;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.95);padding:6px 14px;border-radius:30px;box-shadow:0 2px 8px rgba(0,0,0,0.2);max-width:92vw;}
+    #top-bar h6{margin:0;font-size:12px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38vw;}
+    .badge-blue{font-size:11px;background:#0077b6;color:white;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0;}
+    .badge-green{font-size:11px;background:#28a745;color:white;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0;}
+    .badge-btn{font-size:11px;padding:3px 10px;border-radius:10px;white-space:nowrap;flex-shrink:0;border:none;cursor:pointer;touch-action:manipulation;}
+    #logout-btn{background:#e63946;color:white;}
+    #change-pin-btn{background:#f59f00;color:white;}
+    #realtime-indicator{position:absolute;top:55px;left:50%;transform:translateX(-50%);z-index:1500;background:rgba(0,150,0,.85);color:#fff;font-size:11px;padding:4px 12px;border-radius:20px;display:none;white-space:nowrap;pointer-events:none;transition:opacity .5s;}
+    #realtime-indicator.show{display:block;}
+    #realtime-indicator.fade-out{opacity:0;}
+
+    /* Modal cambio PIN */
+    #pin-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;}
+    #pin-modal.show{display:flex;}
+    #pin-modal .modal-card{background:white;border-radius:16px;padding:24px;width:100%;max-width:320px;text-align:center;}
+    #pin-modal h5{margin-bottom:16px;font-size:16px;}
+    #pin-modal input{width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;font-size:18px;text-align:center;letter-spacing:8px;margin-bottom:10px;outline:none;}
+    #pin-modal .btn-save{width:100%;padding:11px;border-radius:8px;border:none;background:#0077b6;color:white;font-size:14px;font-weight:bold;cursor:pointer;margin-bottom:8px;}
+    #pin-modal .btn-cancel{width:100%;padding:9px;border-radius:8px;border:1px solid #ddd;background:transparent;font-size:13px;cursor:pointer;}
+
+    .estado-label{background:transparent;border:none;padding:2px 5px;font-size:11px;white-space:nowrap;margin-left:20px;text-align:center;pointer-events:none;box-shadow:none;}
+    .custom-marker-container{display:flex;align-items:center;flex-direction:row;}
+    .custom-pin{width:30px;height:30px;border-radius:50%;background:var(--color,#0077b6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.2em;box-shadow:0 2px 8px rgba(0,0,0,.2);}
+    @media(max-width:480px){#top-bar h6{font-size:11px;}.badge-blue,.badge-green,.badge-btn{font-size:10px;padding:2px 6px;}.estado-label{font-size:9px;}}
+  </style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-screen">
+  <div class="card">
+    <div class="logo">🗺</div>
+    <h2>Mis Órdenes</h2>
+    <p class="subtitle">Tecsycom – Ingresa tus datos</p>
+    <select id="tecnico-select"><option value="">Cargando...</option></select>
+    <input type="number" id="pin-login" placeholder="PIN (4 dígitos)" maxlength="4" min="1000" max="9999">
+    <div class="zona-row">
+      <label><input type="radio" name="zona" value="LIMA" checked> LIMA</label>
+      <label><input type="radio" name="zona" value="PROVINCIA"> PROVINCIA</label>
+    </div>
+    <button class="btn-main" id="entrar-btn" onclick="entrar()" disabled>Ver mis órdenes</button>
+    <p class="error-msg" id="login-error"></p>
+  </div>
+</div>
+
+<!-- Mapa -->
+<div id="map"></div>
+<div id="top-bar" style="display:none;">
+  <h6 id="tecnico-label">👷</h6>
+  <span class="badge-blue" id="total-badge">0 órdenes</span>
+  <span class="badge-green">● En línea</span>
+  <button class="badge-btn" id="change-pin-btn" onclick="showChangePinModal()">🔐 PIN</button>
+  <button class="badge-btn" id="logout-btn" onclick="logout()">Salir</button>
+</div>
+<div id="realtime-indicator">🔄 Actualizado</div>
+
+<!-- Modal cambio PIN -->
+<div id="pin-modal">
+  <div class="modal-card">
+    <h5>🔐 Cambiar PIN</h5>
+    <input type="number" id="new-pin-input" placeholder="Nuevo PIN" maxlength="4" min="1000" max="9999">
+    <input type="number" id="confirm-pin-input" placeholder="Confirmar PIN" maxlength="4" min="1000" max="9999">
+    <p class="error-msg" id="pin-modal-error"></p>
+    <button class="btn-save" onclick="saveNewPin()">Guardar PIN</button>
+    <button class="btn-cancel" onclick="closePinModal()">Cancelar</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const SUPABASE_URL='https://jxpeztieqwotfgswhzhx.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp4cGV6dGllcXdvdGZnc3doemh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4MzQ4MDQsImV4cCI6MjA4NjQxMDgwNH0.Hf-lbGlP2OmH7Uh2LNKqwHkwHDp7yQV6O73aXw5NCZk';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+let map,markers=[],allRecords=[],techImages={},_ch=null,_ft=null,TECNICO='',ZONA='LIMA';
+
+async function sbLoad(t,z){const{data,error}=await sb.from(t).select('data').eq('id',z).single();if(error)return null;return data?.data??null;}
+async function sbLoadG(t){const{data,error}=await sb.from(t).select('data').eq('id','global').single();if(error)return null;return data?.data??null;}
+
+window.addEventListener('load',async()=>{
+  const saved=localStorage.getItem('tv_tecnico');
+  const savedZona=localStorage.getItem('tv_zona')||'LIMA';
+  const fbTL=await sbLoadG('technician_list');
+  const lista=Array.isArray(fbTL)?fbTL.sort():[];
+  const sel=document.getElementById('tecnico-select');
+  sel.innerHTML='<option value="">— Selecciona tu nombre —</option>';
+  lista.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;if(t===saved)o.selected=true;sel.appendChild(o);});
+  sel.addEventListener('change',()=>{document.getElementById('entrar-btn').disabled=!sel.value;});
+  document.getElementById('entrar-btn').disabled=!sel.value;
+  document.querySelector(`input[name=zona][value="${savedZona}"]`).checked=true;
+});
+
+async function entrar(){
+  const sel=document.getElementById('tecnico-select');
+  const pinVal=document.getElementById('pin-login').value.trim();
+  const err=document.getElementById('login-error');
+  err.textContent='';
+  if(!sel.value){err.textContent='Selecciona tu nombre.';return;}
+  if(!/^\d{4}$/.test(pinVal)){err.textContent='Ingresa tu PIN de 4 dígitos.';return;}
+
+  // Verificar PIN en Supabase
+  const id=sel.value.replace(/\s+/g,'_').toLowerCase();
+  const{data,error}=await sb.from('technician_pins').select('pin').eq('id',id).single();
+  if(error||!data){err.textContent='No tienes PIN asignado. Contacta al gestor.';return;}
+  if(data.pin!==pinVal){err.textContent='PIN incorrecto. Intenta de nuevo.';return;}
+
+  TECNICO=sel.value;
+  ZONA=document.querySelector('input[name=zona]:checked').value;
+  localStorage.setItem('tv_tecnico',TECNICO);
+  localStorage.setItem('tv_zona',ZONA);
+
+  document.getElementById('entrar-btn').disabled=true;
+  document.getElementById('entrar-btn').textContent='Cargando...';
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('map').style.display='block';
+  document.getElementById('top-bar').style.display='flex';
+  document.getElementById('tecnico-label').textContent=`👷 ${TECNICO}`;
+
+  if(!map){
+    map=L.map('map').setView([-12.0464,-77.0428],12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',{attribution:'&copy; CartoDB'}).addTo(map);
+  }
+  const fbTI=await sbLoadG('tech_images');
+  if(fbTI) techImages=fbTI;
+  await loadData();
+  subscribeRealtime();
+}
+
+function logout(){
+  localStorage.removeItem('tv_tecnico');localStorage.removeItem('tv_zona');
+  if(_ch){sb.removeChannel(_ch);_ch=null;}
+  markers.forEach(m=>map.removeLayer(m));markers=[];
+  document.getElementById('map').style.display='none';
+  document.getElementById('top-bar').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('entrar-btn').disabled=false;
+  document.getElementById('entrar-btn').textContent='Ver mis órdenes';
+  document.getElementById('pin-login').value='';
+  TECNICO='';ZONA='LIMA';
+}
+
+// ── Cambio de PIN ─────────────────────────────────────────────────────────────
+function showChangePinModal(){
+  document.getElementById('new-pin-input').value='';
+  document.getElementById('confirm-pin-input').value='';
+  document.getElementById('pin-modal-error').textContent='';
+  document.getElementById('pin-modal').classList.add('show');
+}
+function closePinModal(){document.getElementById('pin-modal').classList.remove('show');}
+
+async function saveNewPin(){
+  const np=document.getElementById('new-pin-input').value.trim();
+  const cp=document.getElementById('confirm-pin-input').value.trim();
+  const err=document.getElementById('pin-modal-error');
+  err.textContent='';
+  if(!/^\d{4}$/.test(np)){err.textContent='El PIN debe tener exactamente 4 dígitos.';return;}
+  if(np!==cp){err.textContent='Los PINs no coinciden.';return;}
+  const id=TECNICO.replace(/\s+/g,'_').toLowerCase();
+  const{error}=await sb.from('technician_pins').upsert({id,pin:np,updated_at:new Date().toISOString()});
+  if(error){err.textContent='Error al guardar. Intenta de nuevo.';return;}
+  closePinModal();
+  flash('PIN actualizado correctamente ✓');
+}
+
+// ── Datos y mapa ──────────────────────────────────────────────────────────────
+async function loadData(){
+  const recData=await sbLoad('records',ZONA);
+  allRecords=Array.isArray(recData)?recData:(recData?Object.values(recData):[]);
+  renderMarkers();
+}
+
+function subscribeRealtime(){
+  if(_ch){sb.removeChannel(_ch);_ch=null;}
+  _ch=sb.channel(`tv_${TECNICO}_${ZONA}`)
+    .on('postgres_changes',{event:'*',schema:'public',table:'records',filter:`id=eq.${ZONA}`},payload=>{
+      const inc=payload.new?.data;if(!inc)return;
+      allRecords=Array.isArray(inc)?inc:Object.values(inc);
+      renderMarkers();flash('Tus órdenes actualizadas');
+    })
+    .on('postgres_changes',{event:'*',schema:'public',table:'tech_images',filter:`id=eq.global`},payload=>{
+      const inc=payload.new?.data;if(!inc)return;
+      techImages=inc;renderMarkers();
+    })
+    .subscribe();
+}
+
+function renderMarkers(){
+  markers.forEach(m=>map.removeLayer(m));markers=[];
+  const mis=allRecords.filter(r=>r.Tecnico&&r.Tecnico.toUpperCase()===TECNICO.toUpperCase());
+  document.getElementById('total-badge').textContent=`${mis.length} orden${mis.length!==1?'es':''}`;
+  mis.forEach(record=>{
+    const lat=record.latitud_Y,lng=record.longitud_X;if(!lat||!lng)return;
+    const estado=record.Estado||'N/A';
+    const imgSrc=techImages[TECNICO]||null;
+    const match=estado.match(/(8\/12|12\/16|16\/20)/);
+    const iv=match&&/(pendiente|coord)/i.test(estado)?getIv(match[1]):null;
+    const now=new Date(),ns=now.getHours()*3600+now.getMinutes()*60+now.getSeconds();
+    const yaVencio=iv&&ns>=iv.end*3600;
+    const vHtml=yaVencio?`<div style="position:absolute;top:-18px;left:0;min-width:55px;background:rgba(200,0,0,0.90);color:white;font-weight:bold;font-size:10px;padding:2px 5px;border-radius:3px;z-index:9999;pointer-events:none;white-space:nowrap;overflow:visible;">VENCIDO</div>`:'';
+    let marker;
+    if(imgSrc){
+      marker=L.marker([lat,lng],{icon:L.divIcon({className:'',html:`<div style="position:relative;width:30px;height:30px;overflow:visible;">${vHtml}<img src="${imgSrc}" style="width:30px;height:30px;border-radius:50%;"/></div>`,iconSize:[30,30],iconAnchor:[15,15]})}).addTo(map);
+      marker.bindTooltip(estado,{permanent:true,direction:'right',className:'estado-label',offset:[5,0]});
+    } else {
+      marker=L.marker([lat,lng],{icon:L.divIcon({className:'custom-marker-container',html:`<div style="position:relative;overflow:visible;">${vHtml}<div class="custom-pin" style="--color:#0077b6">${estado.charAt(0)}</div></div><div class="estado-label">${estado}</div>`,iconSize:[100,30],iconAnchor:[15,15]})}).addTo(map);
+    }
+    marker.bindPopup(`<div style="font-size:13px;min-width:180px;line-height:1.8;"><strong>${record.Cliente||'—'}</strong><br><span style="font-size:11px;color:#555;">${record.Direccion||'—'}</span><br><strong>Estado:</strong> ${estado}<br><strong>Negocio:</strong> ${record.Negocio||'—'}<br>${record.Observaciones?`<strong>Obs:</strong> ${record.Observaciones}<br>`:''}${record.Location?`<a href="${record.Location}" target="_blank" style="font-size:11px;">📍 Ver en Maps</a>`:''}</div>`);
+    markers.push(marker);
+  });
+  if(markers.length>0) map.fitBounds(new L.featureGroup(markers).getBounds(),{padding:[50,50]});
+}
+
+function flash(msg){
+  const el=document.getElementById('realtime-indicator');if(!el)return;
+  if(_ft)clearTimeout(_ft);
+  el.classList.remove('fade-out');el.classList.add('show');el.textContent=`🔄 ${msg}`;
+  _ft=setTimeout(()=>{el.classList.add('fade-out');setTimeout(()=>el.classList.remove('show','fade-out'),600);},3000);
+}
+function getIv(tr){return [{name:'8/12',start:8,end:12},{name:'12/16',start:12,end:16},{name:'16/20',start:16,end:20}].find(i=>i.name===tr?.trim())||null;}
+</script>
+</body>
+</html>
