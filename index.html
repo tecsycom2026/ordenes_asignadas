@@ -31,10 +31,22 @@
     .success-msg{color:#51cf66;font-size:12px;margin-top:6px;}
 
     /* Mapa */
-    #top-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1500;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.95);padding:6px 14px;border-radius:30px;box-shadow:0 2px 8px rgba(0,0,0,0.2);max-width:92vw;}
-    #top-bar h6{margin:0;font-size:12px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38vw;}
+    #top-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1500;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.95);padding:6px 14px;border-radius:30px;box-shadow:0 2px 8px rgba(0,0,0,0.2);max-width:95vw;}
+    #top-bar h6{margin:0;font-size:12px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30vw;}
     .badge-blue{font-size:11px;background:#0077b6;color:white;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0;}
     .badge-green{font-size:11px;background:#28a745;color:white;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0;}
+    
+    /* Estilo para el nuevo selector */
+    #map-style-select {
+      font-size: 10px;
+      padding: 2px 4px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      outline: none;
+      background: white;
+      cursor: pointer;
+    }
+
     .badge-btn{font-size:11px;padding:3px 10px;border-radius:10px;white-space:nowrap;flex-shrink:0;border:none;cursor:pointer;touch-action:manipulation;}
     #logout-btn{background:#e63946;color:white;}
     #change-pin-btn{background:#f59f00;color:white;}
@@ -59,7 +71,6 @@
 </head>
 <body>
 
-<!-- Login -->
 <div id="login-screen">
   <div class="card">
     <div class="logo">🗺</div>
@@ -76,18 +87,21 @@
   </div>
 </div>
 
-<!-- Mapa -->
 <div id="map"></div>
 <div id="top-bar" style="display:none;">
   <h6 id="tecnico-label">👷</h6>
   <span class="badge-blue" id="total-badge">0 órdenes</span>
-  <span class="badge-green">● En línea</span>
+  
+  <select id="map-style-select" onchange="changeMapStyle(this.value)">
+    <option value="carto">CartoDB (Claro)</option>
+    <option value="google">Google Maps</option>
+  </select>
+
   <button class="badge-btn" id="change-pin-btn" onclick="showChangePinModal()">🔐 PIN</button>
   <button class="badge-btn" id="logout-btn" onclick="logout()">Salir</button>
 </div>
 <div id="realtime-indicator">🔄 Actualizado</div>
 
-<!-- Modal cambio PIN -->
 <div id="pin-modal">
   <div class="modal-card">
     <h5>🔐 Cambiar PIN</h5>
@@ -104,7 +118,14 @@
 const SUPABASE_URL='https://jxpeztieqwotfgswhzhx.supabase.co';
 const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp4cGV6dGllcXdvdGZnc3doemh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4MzQ4MDQsImV4cCI6MjA4NjQxMDgwNH0.Hf-lbGlP2OmH7Uh2LNKqwHkwHDp7yQV6O73aXw5NCZk';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-let map,markers=[],allRecords=[],techImages={},_ch=null,_ft=null,TECNICO='',ZONA='LIMA';
+
+// Variables Globales (Añadido currentTileLayer y mapStyles)
+let map, markers=[], allRecords=[], techImages={}, _ch=null, _ft=null, TECNICO='', ZONA='LIMA';
+let currentTileLayer; 
+const mapStyles = {
+  carto: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+  google: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'
+};
 
 async function sbLoad(t,z){const{data,error}=await sb.from(t).select('data').eq('id',z).single();if(error)return null;return data?.data??null;}
 async function sbLoadG(t){const{data,error}=await sb.from(t).select('data').eq('id','global').single();if(error)return null;return data?.data??null;}
@@ -130,7 +151,6 @@ async function entrar(){
   if(!sel.value){err.textContent='Selecciona tu nombre.';return;}
   if(!/^\d{4}$/.test(pinVal)){err.textContent='Ingresa tu PIN de 4 dígitos.';return;}
 
-  // Verificar PIN en Supabase
   const id=sel.value.replace(/\s+/g,'_').toLowerCase();
   const{data,error}=await sb.from('technician_pins').select('pin').eq('id',id).single();
   if(error||!data){err.textContent='No tienes PIN asignado. Contacta al gestor.';return;}
@@ -148,14 +168,27 @@ async function entrar(){
   document.getElementById('top-bar').style.display='flex';
   document.getElementById('tecnico-label').textContent=`👷 ${TECNICO}`;
 
+  // Inicialización del Mapa con soporte para cambio de estilo
   if(!map){
     map=L.map('map').setView([-12.0464,-77.0428],12);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',{attribution:'&copy; CartoDB'}).addTo(map);
+    currentTileLayer = L.tileLayer(mapStyles.carto, {
+      attribution: '&copy; CartoDB / Google Maps'
+    }).addTo(map);
   }
+  
   const fbTI=await sbLoadG('tech_images');
   if(fbTI) techImages=fbTI;
   await loadData();
   subscribeRealtime();
+}
+
+// Nueva función para cambiar el estilo del mapa
+function changeMapStyle(styleKey) {
+  if (!map || !currentTileLayer) return;
+  map.removeLayer(currentTileLayer);
+  currentTileLayer = L.tileLayer(mapStyles[styleKey], {
+    attribution: '&copy; ' + (styleKey === 'google' ? 'Google Maps' : 'CartoDB')
+  }).addTo(map);
 }
 
 function logout(){
@@ -171,7 +204,6 @@ function logout(){
   TECNICO='';ZONA='LIMA';
 }
 
-// ── Cambio de PIN ─────────────────────────────────────────────────────────────
 function showChangePinModal(){
   document.getElementById('new-pin-input').value='';
   document.getElementById('confirm-pin-input').value='';
@@ -194,7 +226,6 @@ async function saveNewPin(){
   flash('PIN actualizado correctamente ✓');
 }
 
-// ── Datos y mapa ──────────────────────────────────────────────────────────────
 async function loadData(){
   const recData=await sbLoad('records',ZONA);
   allRecords=Array.isArray(recData)?recData:(recData?Object.values(recData):[]);
